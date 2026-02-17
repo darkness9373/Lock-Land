@@ -1,0 +1,18 @@
+{
+    "format_version": 2,
+    "header": {
+        "description": "Basic Resource Pack for Lock Land",
+        "name": "Lock Land RP - Resources",
+        "uuid": "3e8f9b2a-6c4a-4f2d-9a3b-7c6d5e4f8a1b",
+        "version": [1, 0, 0],
+        "min_engine_version": [1, 16, 0]
+    },
+    "modules": [
+        {
+            "description": "Resource definitions",
+            "type": "resources",
+            "uuid": "d4e5f6a7-8b9c-4d0e-9f1a-2b3c4d5e6f7a",
+            "version": [1, 0, 0]
+        }
+    ]
+}
