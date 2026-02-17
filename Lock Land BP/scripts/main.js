@@ -1,4 +1,4 @@
-import { world, Player, system, BlockPermutation } from "@minecraft/server";
+import { world, Player, system, BlockPermutation, Vector3, Dimension } from "@minecraft/server";
 import { ActionFormData } from "@minecraft/server-ui";
 import Tag from "./extension/Tag"
 import LandManager from "./extension/LandManager"
@@ -47,6 +47,9 @@ function setPosition(player) {
         Tag.add(player, 'lockland_pos1');
         player.setDynamicProperty('locklandPos1', JSON.stringify(location));
         player.sendMessage(`§a[Lock Land] §bPosition 1 set: §f${Math.floor(location.x)}, ${Math.floor(location.y)}, ${Math.floor(location.z)}`);
+        
+        // Start particle visualization
+        startParticleVisualization(player);
         return;
     }
     
@@ -56,11 +59,108 @@ function setPosition(player) {
         player.setDynamicProperty('locklandPos2', JSON.stringify(location));
         player.sendMessage(`§a[Lock Land] §bPosition 2 set: §f${Math.floor(location.x)}, ${Math.floor(location.y)}, ${Math.floor(location.z)}`);
         
+        // Stop particle visualization by removing the tag that controls it
+        Tag.remove(player, 'lockland_show_particles');
+        
         // Show confirmation form
         system.run(() => {
             showConfirmationForm(player);
         });
         return;
+    }
+}
+
+/**
+ * Start particle visualization cuboid
+ * @param {Player} player 
+ */
+function startParticleVisualization(player) {
+    Tag.add(player, 'lockland_show_particles');
+    
+    // Particle update loop
+    system.runInterval(() => {
+        if (!player.hasTag('lockland_show_particles')) {
+            return;
+        }
+        
+        try {
+            const pos1Str = player.getDynamicProperty('locklandPos1');
+            if (!pos1Str) return;
+            
+            const pos1 = JSON.parse(pos1Str);
+            const playerPos = player.location;
+            
+            // Get the cuboid corners
+            const minX = Math.min(pos1.x, playerPos.x);
+            const maxX = Math.max(pos1.x, playerPos.x);
+            const minY = Math.min(pos1.y, playerPos.y);
+            const maxY = Math.max(pos1.y, playerPos.y);
+            const minZ = Math.min(pos1.z, playerPos.z);
+            const maxZ = Math.max(pos1.z, playerPos.z);
+            
+            // Draw particles at edges/corners
+            drawCuboidParticles(player.dimension, minX, minY, minZ, maxX, maxY, maxZ);
+        } catch (error) {
+            // Silently fail
+        }
+    }, 2); // Update every tick
+}
+
+/**
+ * Draw cuboid outline with particles
+ * @param {Dimension} dimension 
+ * @param {number} minX 
+ * @param {number} minY 
+ * @param {number} minZ 
+ * @param {number} maxX 
+ * @param {number} maxY 
+ * @param {number} maxZ 
+ */
+function drawCuboidParticles(dimension, minX, minY, minZ, maxX, maxY, maxZ) {
+    const corners = [
+        { x: minX, y: minY, z: minZ },
+        { x: maxX, y: minY, z: minZ },
+        { x: minX, y: maxY, z: minZ },
+        { x: maxX, y: maxY, z: minZ },
+        { x: minX, y: minY, z: maxZ },
+        { x: maxX, y: minY, z: maxZ },
+        { x: minX, y: maxY, z: maxZ },
+        { x: maxX, y: maxY, z: maxZ }
+    ];
+    
+    // Draw edges
+    const edges = [
+        [0, 1], [2, 3], [4, 5], [6, 7],  // Parallel to X
+        [0, 2], [1, 3], [4, 6], [5, 7],  // Parallel to Y
+        [0, 4], [1, 5], [2, 6], [3, 7]   // Parallel to Z
+    ];
+    
+    edges.forEach(edge => {
+        const p1 = corners[edge[0]];
+        const p2 = corners[edge[1]];
+        drawLineParticles(dimension, p1, p2);
+    });
+}
+
+/**
+ * Draw a line between two points using particles
+ * @param {Dimension} dimension 
+ * @param {object} p1 - {x, y, z}
+ * @param {object} p2 - {x, y, z}
+ */
+function drawLineParticles(dimension, p1, p2) {
+    const steps = 16;
+    
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = p1.x + (p2.x - p1.x) * t;
+        const y = p1.y + (p2.y - p1.y) * t;
+        const z = p1.z + (p2.z - p1.z) * t;
+        
+        // Spawn particle at this location
+        dimension.spawnParticle('minecraft:redstone', { x, y, z }, {
+            brightness: { block: 15, sky: 15 }
+        });
     }
 }
 
@@ -416,6 +516,7 @@ function confirmDelete(player, land) {
 function resetLandSelection(player) {
     Tag.remove(player, 'lockland_pos1');
     Tag.remove(player, 'lockland_pos2');
+    Tag.remove(player, 'lockland_show_particles');
     player.setDynamicProperty('locklandPos1', undefined);
     player.setDynamicProperty('locklandPos2', undefined);
 }
