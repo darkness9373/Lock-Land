@@ -30,7 +30,7 @@ export class LandManager {
      * @param {array} permission - Array of player names with permission
      * @returns {object|null} - The saved land data or null if fails
      */
-    saveLand(ownerName, location1, location2, permission = [], name = null) {
+    saveLand(ownerName, location1, location2, permission = [], name = null, dimension = null) {
         // Get player's current land count
         const countKey = `Land_${ownerName}_count`;
         let count = world.getDynamicProperty(countKey) ?? 0;
@@ -56,7 +56,8 @@ export class LandManager {
             location2: { x: maxX, y: maxY, z: maxZ },
             owner: ownerName,
             permission: permission,
-            name: name ?? `${ownerName}'s Land ${count + 1}`
+            name: name ?? `${ownerName}'s Land ${count + 1}`,
+            dimension: dimension ?? (location1 && location1.dimension ? location1.dimension : null)
         };
         
         world.setDynamicProperty(landId, JSON.stringify(landData));

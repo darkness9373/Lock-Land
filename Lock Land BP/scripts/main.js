@@ -164,7 +164,7 @@ function showAllLandsAdminList(player) {
     }
 
     const form = new ActionFormData().title('§6All Lands').body('Select a land:');
-    lands.forEach(land => form.button(`${land.name || land.id} — ${land.owner}`));
+    lands.forEach(land => form.button(`${land.name || land.id}\n§7${land.owner}`));
     form.button('§a↩ Back');
 
     form.show(player).then(result => {
@@ -206,8 +206,24 @@ function adminLandDetailForm(player, land) {
                 try {
                     const dest = findSafeTeleportLocation(player.dimension, loc1, loc2);
                     if (dest) {
-                        player.teleport(dest, player.dimension);
-                        player.sendMessage('§a[Lock Land] Teleported to land.');
+                        try {
+                            if (land.dimension) {
+                                try {
+                                    const dim = world.getDimension ? world.getDimension(land.dimension) : null;
+                                    if (dim) dest.dimension = dim;
+                                } catch (e) {}
+                            }
+                            if (player.tryTeleport) {
+                                const ok = player.tryTeleport(dest);
+                                if (ok) player.sendMessage('§a[Lock Land] Teleported to land.');
+                                else player.sendMessage('§c[Lock Land] Teleport attempt failed.');
+                            } else {
+                                player.teleport(dest);
+                                player.sendMessage('§a[Lock Land] Teleported to land.');
+                            }
+                        } catch (e) {
+                            player.sendMessage('§c[Lock Land] Teleport failed: ' + e);
+                        }
                     } else {
                         player.sendMessage('§c[Lock Land] No safe teleport location found.');
                     }
@@ -454,7 +470,8 @@ function showConfirmationForm(player) {
                 }
                 const landName = nResult.formValues[0] || defaultName;
                 try {
-                    const savedLand = LandManager.saveLand(player.name, pos1, pos2, [], landName);
+                    const dimId = player.dimension && player.dimension.id ? player.dimension.id : null;
+                    const savedLand = LandManager.saveLand(player.name, pos1, pos2, [], landName, dimId);
                     if (!savedLand) {
                         player.sendMessage(`§c[Lock Land] Cannot save land - you've reached the maximum claims limit!`);
                         resetLandSelection(player);
@@ -559,13 +576,29 @@ function showLandDetailForm(player, land) {
             const loc2 = land.location2;
             try {
                 const dest = findSafeTeleportLocation(player.dimension, loc1, loc2);
-                if (dest) {
-                    // Only allow teleport if owner or admin
-                    if (player.name === land.owner || (player.hasTag && player.hasTag('admin'))) {
-                        player.teleport(dest, player.dimension);
-                    } else {
-                        player.sendMessage('§c[Lock Land] You can only teleport to your own land.');
-                    }
+                        if (dest) {
+                        // Only allow teleport if owner or admin
+                        if (player.name === land.owner || (player.hasTag && player.hasTag('admin'))) {
+                            try {
+                                // attach dimension if present
+                                if (land.dimension) {
+                                    try {
+                                        const dim = world.getDimension ? world.getDimension(land.dimension) : null;
+                                        if (dim) dest.dimension = dim;
+                                    } catch (e) {}
+                                }
+                                if (player.tryTeleport) {
+                                    const ok = player.tryTeleport(dest);
+                                    if (!ok) player.sendMessage('§c[Lock Land] Teleport attempt failed.');
+                                } else {
+                                    player.teleport(dest);
+                                }
+                            } catch (e) {
+                                player.sendMessage('§c[Lock Land] Teleport failed.');
+                            }
+                        } else {
+                            player.sendMessage('§c[Lock Land] You can only teleport to your own land.');
+                        }
                 } else {
                     player.sendMessage('§c[Lock Land] No safe teleport location found.');
                 }
