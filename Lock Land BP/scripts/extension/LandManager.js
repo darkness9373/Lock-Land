@@ -30,7 +30,7 @@ export class LandManager {
      * @param {array} permission - Array of player names with permission
      * @returns {object|null} - The saved land data or null if fails
      */
-    saveLand(ownerName, location1, location2, permission = []) {
+    saveLand(ownerName, location1, location2, permission = [], name = null) {
         // Get player's current land count
         const countKey = `Land_${ownerName}_count`;
         let count = world.getDynamicProperty(countKey) ?? 0;
@@ -55,7 +55,8 @@ export class LandManager {
             location1: { x: minX, y: minY, z: minZ },
             location2: { x: maxX, y: maxY, z: maxZ },
             owner: ownerName,
-            permission: permission
+            permission: permission,
+            name: name ?? `${ownerName}'s Land ${count + 1}`
         };
         
         world.setDynamicProperty(landId, JSON.stringify(landData));
@@ -167,16 +168,34 @@ export class LandManager {
     deleteLand(landId) {
         const land = this.getLandById(landId);
         if (!land) return false;
-        
-        world.setDynamicProperty(landId, undefined);
-        
-        // Update count for player
-        const countKey = `Land_${land.owner}_count`;
+        const owner = land.owner;
+        const countKey = `Land_${owner}_count`;
         let count = world.getDynamicProperty(countKey) ?? 0;
-        if (count > 0) {
-            world.setDynamicProperty(countKey, count - 1);
+
+        // If count is zero just clear and return
+        if (count <= 0) {
+            world.setDynamicProperty(landId, undefined);
+            world.setDynamicProperty(countKey, 0);
+            return true;
         }
-        
+
+        // Parse index from id (Land_owner_index)
+        const parts = landId.split('_');
+        const index = parseInt(parts[parts.length - 1]);
+
+        // Shift subsequent lands down to fill the gap
+        for (let i = index; i < count - 1; i++) {
+            const nextKey = `Land_${owner}_${i + 1}`;
+            const curKey = `Land_${owner}_${i}`;
+            const nextData = world.getDynamicProperty(nextKey);
+            world.setDynamicProperty(curKey, nextData);
+        }
+
+        // Remove last entry and decrement count
+        const lastKey = `Land_${owner}_${count - 1}`;
+        world.setDynamicProperty(lastKey, undefined);
+        world.setDynamicProperty(countKey, count - 1);
+
         return true;
     }
 
@@ -218,6 +237,27 @@ export class LandManager {
         }
         
         return null;
+    }
+
+    /**
+     * Get all lands in the world
+     * @returns {array}
+     */
+    getAllLands() {
+        const lands = [];
+        for (const key of world.getDynamicPropertyIds()) {
+            if (key.startsWith('Land_') && !key.endsWith('_count')) {
+                const data = world.getDynamicProperty(key);
+                if (!data) continue;
+                try {
+                    const land = JSON.parse(data);
+                    lands.push(land);
+                } catch {
+                    // skip invalid
+                }
+            }
+        }
+        return lands;
     }
 
     /**

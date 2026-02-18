@@ -1,5 +1,5 @@
 import { world, Player, system, BlockPermutation, Vector3, Dimension } from "@minecraft/server";
-import { ActionFormData } from "@minecraft/server-ui";
+import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import Tag from "./extension/Tag"
 import LandManager from "./extension/LandManager"
 import Protection from "./extension/Protection"
@@ -13,9 +13,9 @@ world.beforeEvents.itemUse.subscribe(data => {
     
     // Check if player is sneaking
     if (!player.isSneaking) {
-        // Not sneaking: Show land info/menu
+        // Not sneaking: Show main menu
         system.run(() => {
-            showLandMenu(player);
+            showMainMenu(player);
         });
         return;
     }
@@ -68,6 +68,157 @@ function setPosition(player) {
         });
         return;
     }
+}
+
+/**
+ * Main menu
+ * @param {Player} player
+ */
+function showMainMenu(player) {
+    const form = new ActionFormData()
+        .title('§6Lock Land - Menu')
+        .body('Select an option:')
+        .button('§2Manage Lands')
+        .button('§3Permissions');
+
+    if (player.hasTag && player.hasTag('admin')) {
+        form.button('§4Admin');
+    }
+
+    form.show(player).then(result => {
+        if (result.canceled) return;
+        if (result.selection === 0) {
+            showLandMenu(player);
+        } else if (result.selection === 1) {
+            showPermissionList(player);
+        } else if (result.selection === 2) {
+            showAdminMenu(player);
+        }
+    });
+}
+
+function showPermissionList(player) {
+    const lands = LandManager.getPlayerLands(player.name);
+    if (lands.length === 0) {
+        player.sendMessage('§c[Lock Land] You have no lands to manage permissions for.');
+        return;
+    }
+
+    const form = new ActionFormData()
+        .title('§6Lock Land - Permissions')
+        .body('Select a land to manage permissions:');
+
+    lands.forEach(land => form.button(`${land.name || land.id} — ${land.owner}`));
+    form.button('§a↩ Back');
+
+    form.show(player).then(result => {
+        if (result.canceled) return;
+        if (result.selection >= 0 && result.selection < lands.length) {
+            showPermissionMenu(player, lands[result.selection]);
+        }
+    });
+}
+
+function showAdminMenu(player) {
+    const form = new ActionFormData()
+        .title('§6Lock Land - Admin')
+        .body('Admin actions:')
+        .button('§eList All Lands')
+        .button('§cDelete All Lands')
+        .button('§a↩ Back');
+
+    form.show(player).then(result => {
+        if (result.canceled) return;
+        if (result.selection === 0) {
+            showAllLandsAdminList(player);
+        } else if (result.selection === 1) {
+            // Confirm delete all
+            const confirm = new ActionFormData()
+                .title('Confirm Delete All')
+                .body('Are you sure you want to delete ALL lands in the world?')
+                .button('§cYes, delete all')
+                .button('§aCancel');
+            confirm.show(player).then(cres => {
+                if (cres.canceled) return;
+                if (cres.selection === 0) {
+                    // Robustly delete all lands by refreshing list until empty
+                    let all = LandManager.getAllLands();
+                    while (all.length > 0) {
+                        for (const l of all) {
+                            LandManager.deleteLand(l.id);
+                        }
+                        all = LandManager.getAllLands();
+                    }
+                    player.sendMessage('§a[Lock Land] All lands deleted.');
+                }
+            });
+        }
+    });
+}
+
+function showAllLandsAdminList(player) {
+    const lands = LandManager.getAllLands();
+    if (lands.length === 0) {
+        player.sendMessage('§c[Lock Land] No lands found.');
+        return;
+    }
+
+    const form = new ActionFormData().title('§6All Lands').body('Select a land:');
+    lands.forEach(land => form.button(`${land.name || land.id} — ${land.owner}`));
+    form.button('§a↩ Back');
+
+    form.show(player).then(result => {
+        if (result.canceled) return;
+        if (result.selection >= 0 && result.selection < lands.length) {
+            adminLandDetailForm(player, lands[result.selection]);
+        }
+    });
+}
+
+function adminLandDetailForm(player, land) {
+    const loc1 = land.location1;
+    const loc2 = land.location2;
+    const size = {
+        x: Math.abs(Math.round(loc2.x) - Math.round(loc1.x)) + 1,
+        y: Math.abs(Math.round(loc2.y) - Math.round(loc1.y)) + 1,
+        z: Math.abs(Math.round(loc2.z) - Math.round(loc1.z)) + 1
+    };
+    const area = size.x * size.z;
+
+    const form = new ActionFormData()
+        .title('§6Lock Land - Admin View')
+        .body(
+            `§bOwner: §f${land.owner}\n` +
+            `§bName: §f${land.name || 'N/A'}\n` +
+            `§bSize: §f${size.x}×${size.y}×${size.z} | Area: ${area}m²\n`
+        )
+        .button('§a↪ Teleport')
+        .button('§cDelete Land')
+        .button('§a↩ Back');
+
+    form.show(player).then(result => {
+        if (result.canceled) return;
+        if (result.selection === 0) {
+            // Teleport to center
+            const cx = Math.floor((loc1.x + loc2.x) / 2) + 0.5;
+            const cy = Math.floor((loc1.y + loc2.y) / 2);
+            const cz = Math.floor((loc1.z + loc2.z) / 2) + 0.5;
+                try {
+                    const dest = findSafeTeleportLocation(player.dimension, loc1, loc2);
+                    if (dest) {
+                        player.teleport(dest, player.dimension);
+                        player.sendMessage('§a[Lock Land] Teleported to land.');
+                    } else {
+                        player.sendMessage('§c[Lock Land] No safe teleport location found.');
+                    }
+                } catch (e) {
+                    player.sendMessage('§c[Lock Land] Teleport failed: ' + e);
+                }
+        } else if (result.selection === 1) {
+            LandManager.deleteLand(land.id);
+            player.sendMessage('§a[Lock Land] Land deleted.');
+        }
+    });
 }
 
 /**
@@ -131,10 +282,65 @@ function drawLineParticles(dimension, p1, p2) {
         const z = p1.z + (p2.z - p1.z) * t;
         
         // Spawn particle at this location
-        dimension.spawnParticle('minecraft:redstone', { x, y, z }, {
+        dimension.spawnParticle('minecraft:redstone_ore_dust_particle', { x, y, z }, {
             brightness: { block: 15, sky: 15 }
         });
     }
+}
+
+/**
+ * Find a safe teleport location inside the given land box.
+ * Tries the center column and searches downward for a solid block with
+ * two air blocks above and no lava/water.
+ * @param {Dimension} dimension
+ * @param {object} loc1
+ * @param {object} loc2
+ * @returns {Vector3|null}
+ */
+function findSafeTeleportLocation(dimension, loc1, loc2) {
+    const minX = Math.min(loc1.x, loc2.x);
+    const maxX = Math.max(loc1.x, loc2.x);
+    const minY = Math.min(loc1.y, loc2.y);
+    const maxY = Math.max(loc1.y, loc2.y);
+    const minZ = Math.min(loc1.z, loc2.z);
+    const maxZ = Math.max(loc1.z, loc2.z);
+
+    const cx = Math.floor((minX + maxX) / 2) + 0.5;
+    const cz = Math.floor((minZ + maxZ) / 2) + 0.5;
+
+    // search from top down within a reasonable range
+    const top = Math.min(maxY + 5, 256);
+    const bottom = Math.max(minY - 5, 1);
+
+    function getId(b) {
+        if (!b) return null;
+        return b.typeId || b.id || (b.permutation && b.permutation.type && b.permutation.type.id) || null;
+    }
+
+    for (let y = top; y >= bottom; y--) {
+        try {
+            const below = dimension.getBlock({ x: Math.floor(cx), y: y - 1, z: Math.floor(cz) });
+            const at = dimension.getBlock({ x: Math.floor(cx), y: y, z: Math.floor(cz) });
+            const above = dimension.getBlock({ x: Math.floor(cx), y: y + 1, z: Math.floor(cz) });
+
+            const belowId = getId(below);
+            const atId = getId(at);
+            const aboveId = getId(above);
+
+            const isAir = id => !id || id.includes('air');
+            const isLiquid = id => id && (id.includes('lava') || id.includes('water'));
+
+            if (!isAir(belowId) && !isLiquid(belowId) && isAir(atId) && isAir(aboveId)) {
+                return new Vector3(cx, y, cz);
+            }
+        } catch (e) {
+            // ignore API differences and continue
+        }
+    }
+
+    // fallback: place at top of the land box
+    const fallbackY = Math.min(maxY + 1, 256);
+    return new Vector3(cx, fallbackY, cz);
 }
 
 // Global particle loop: update visualizations for players who set pos1
@@ -234,21 +440,34 @@ function showConfirmationForm(player) {
             }
             
             // Confirm - save the land
-            try {
-                const savedLand = LandManager.saveLand(player.name, pos1, pos2, []);
-                if (!savedLand) {
-                    player.sendMessage(`§c[Lock Land] Cannot save land - you've reached the maximum claims limit!`);
+            // Ask for a name using modal
+            const defaultName = `${player.name}'s Land`;
+            const nameForm = new ModalFormData()
+                .title('§6Lock Land - Name')
+                .textField('Enter a name for this land', 'My Land', defaultName);
+
+            nameForm.show(player).then(nResult => {
+                if (nResult.canceled) {
                     resetLandSelection(player);
+                    player.sendMessage('§c[Lock Land] Land claim cancelled.');
                     return;
                 }
-                
-                resetLandSelection(player);
-                player.sendMessage(`§a[Lock Land] Land claim saved successfully!`);
-                player.sendMessage(`§b[Lock Land] This area is now protected.`);
-            } catch (error) {
-                player.sendMessage(`§c[Lock Land] Error saving land: ${error}`);
-                resetLandSelection(player);
-            }
+                const landName = nResult.formValues[0] || defaultName;
+                try {
+                    const savedLand = LandManager.saveLand(player.name, pos1, pos2, [], landName);
+                    if (!savedLand) {
+                        player.sendMessage(`§c[Lock Land] Cannot save land - you've reached the maximum claims limit!`);
+                        resetLandSelection(player);
+                        return;
+                    }
+                    resetLandSelection(player);
+                    player.sendMessage(`§a[Lock Land] Land claim saved successfully!`);
+                    player.sendMessage(`§b[Lock Land] This area is now protected.`);
+                } catch (error) {
+                    player.sendMessage(`§c[Lock Land] Error saving land: ${error}`);
+                    resetLandSelection(player);
+                }
+            });
         } else {
             // Cancel button - delete saved positions
             resetLandSelection(player);
@@ -286,7 +505,7 @@ function showLandMenu(player) {
         const area = size.x * size.z;
         
         form.button(
-            `Land #${index + 1}\n` +
+            `${land.name ? `§b${land.name}\n` : `Land #${index + 1}\n`}` +
             `§7Size: ${size.x}×${size.y}×${size.z} | Area: ${area}m²`
         );
     });
@@ -326,6 +545,7 @@ function showLandDetailForm(player, land) {
             `§bArea: §f${area}m²\n\n` +
             `§bPermissions: §f${land.permission.length}§b player(s)`
         )
+        .button("§a↪ Teleport")
         .button("§3⚙ Manage Permissions")
         .button("§c🗑 Delete Claim")
         .button("§a↩ Back");
@@ -334,10 +554,34 @@ function showLandDetailForm(player, land) {
         if (result.canceled) return;
         
         if (result.selection === 0) {
-            showPermissionMenu(player, land);
+            // Teleport (owner or admin)
+            const loc1 = land.location1;
+            const loc2 = land.location2;
+            try {
+                const dest = findSafeTeleportLocation(player.dimension, loc1, loc2);
+                if (dest) {
+                    // Only allow teleport if owner or admin
+                    if (player.name === land.owner || (player.hasTag && player.hasTag('admin'))) {
+                        player.teleport(dest, player.dimension);
+                    } else {
+                        player.sendMessage('§c[Lock Land] You can only teleport to your own land.');
+                    }
+                } else {
+                    player.sendMessage('§c[Lock Land] No safe teleport location found.');
+                }
+            } catch (e) {
+                player.sendMessage('§c[Lock Land] Teleport failed.');
+            }
         } else if (result.selection === 1) {
-            confirmDelete(player, land);
+            showPermissionMenu(player, land);
         } else if (result.selection === 2) {
+            // Delete - only owner or admin
+            if (player.name === land.owner || (player.hasTag && player.hasTag('admin'))) {
+                confirmDelete(player, land);
+            } else {
+                player.sendMessage('§c[Lock Land] You do not have permission to delete this land.');
+            }
+        } else if (result.selection === 3) {
             showLandMenu(player);
         }
     });
@@ -574,8 +818,8 @@ system.runInterval(() => {
         
         // If player is in a land they don't own
         if (land && !LandManager.hasPermission(player.name, land)) {
-            // Apply weakness effect (level 255, infinite duration shown as long)
-            player.addEffect('weakness', 999999, { amplifier: 254, showParticles: false });
+            // Apply weakness effect for 1 second (reapplied by the interval)
+            player.addEffect('weakness', 1, { amplifier: 254, showParticles: false });
         }
     });
 }, 10); // Check every 10 ticks (0.5 seconds)
