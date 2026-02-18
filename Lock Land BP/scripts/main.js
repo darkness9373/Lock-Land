@@ -444,7 +444,7 @@ function showConfirmationForm(player) {
             const defaultName = `${player.name}'s Land`;
             const nameForm = new ModalFormData()
                 .title('§6Lock Land - Name')
-                .textField('Enter a name for this land', 'My Land', defaultName);
+                .textField('Enter a name for this land', 'My Land', { defaultValue: defaultName });
 
             nameForm.show(player).then(nResult => {
                 if (nResult.canceled) {
