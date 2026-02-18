@@ -803,45 +803,27 @@ system.runInterval(() => {
 
 // Explosion protection - prevent damage to protected lands while allowing explosion effect
 world.beforeEvents.explosion.subscribe(data => {
-    // Get explosion location from source entity
-    if (!data.source || !data.source.location) return;
-    
-    const location = data.source.location;
-    let radius = 0;
-    
-    // Estimate explosion radius based on source entity type
-    const sourceType = data.source.typeId;
-    if (sourceType === 'minecraft:creeper') {
-        radius = 6;
-    } else if (sourceType === 'minecraft:tnt' || sourceType === 'minecraft:tnt_minecart') {
-        radius = 5;
-    } else if (sourceType === 'minecraft:end_crystal') {
-        radius = 6;
-    } else if (sourceType === 'minecraft:fireball') {
-        radius = 5;
-    } else if (sourceType === 'minecraft:small_fireball') {
-        radius = 3;
-    } else {
-        return; // Not a recognized explosion source
-    }
-    
-    // Check if explosion would damage protected land
-    const affectedLand = Protection.checkExplosionDamage(location.x, location.y, location.z, radius);
-    
-    if (affectedLand) {
+    try {
         // Get all impacted blocks
         const impactedBlocks = data.getImpactedBlocks();
         
-        // Filter out blocks that are in protected lands
-        const filteredBlocks = impactedBlocks.filter(block => {
-            const land = LandManager.checkPointInLand(block.x, block.y, block.z);
-            return !land; // Keep blocks NOT in protected lands
-        });
-        
-        // Update impacted blocks to only affect non-protected areas
-        data.setImpactedBlocks(filteredBlocks);
-        
-        world.sendMessage(`§c[Lock Land] Explosion damage blocked in protected land: §f${affectedLand.name}`);
+        // Check if any block is in a protected land
+        for (const block of impactedBlocks) {
+            const land = LandManager.checkPointInLand(
+                Math.floor(block.x),
+                Math.floor(block.y),
+                Math.floor(block.z)
+            );
+            
+            // If explosion would damage protected land, cancel it
+            if (land) {
+                data.cancel = true;
+                world.sendMessage(`§c[Lock Land] Explosion cancelled in protected land: §f${land.name}`);
+                return;
+            }
+        }
+    } catch (e) {
+        world.sendMessage(`§cExplosion event error: ${e.message}`);
     }
 });
 
@@ -897,6 +879,7 @@ system.runInterval(() => {
 }, 2); // Check every tick
 
 // Monitor active TNT and Creeper to prevent primed explosions in protected lands
+/*
 system.runInterval(() => {
     // Monitor all dimensions
     const dimensions = ['overworld', 'nether', 'the_end'];
@@ -971,3 +954,4 @@ system.runInterval(() => {
         } catch (e) {}
     }
 }, 2); // Check every tick
+*/
