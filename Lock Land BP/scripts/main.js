@@ -4,7 +4,24 @@ import Tag from "./extension/Tag"
 import LandManager from "./extension/LandManager"
 import Protection from "./extension/Protection"
 
-// Handle item use - sneak to set positions
+// Handle block interaction - sneak + tap block to set positions
+world.beforeEvents.playerInteractWithBlock.subscribe(data => {
+    const player = data.player;
+    if (!(player instanceof Player)) return;
+    
+    // Check if player is sneaking
+    if (!player.isSneaking) return;
+    
+    // Check for lock land item in main hand
+    const item = player.getComponent('minecraft:equippable')?.getEquipment(0);
+    if (!item || item.typeId !== "drk:lock_land") return;
+    
+    // Set position when sneaking with Lock Land item
+    setPosition(player);
+    data.cancel = true; // Prevent normal block interaction
+});
+
+// Handle item use - non-sneak to show main menu
 world.beforeEvents.itemUse.subscribe(data => {
     const player = data.source
     if (!(player instanceof Player)) return;
@@ -12,17 +29,14 @@ world.beforeEvents.itemUse.subscribe(data => {
     if (!item || item.typeId !== "drk:lock_land") return;
     
     // Check if player is sneaking
-    if (!player.isSneaking) {
-        // Not sneaking: Show main menu
-        system.run(() => {
-            showMainMenu(player);
-        });
-        return;
-    }
+    if (player.isSneaking) return; // Sneak is handled by playerInteractWithBlock
     
-    // Sneaking: Set positions
-    setPosition(player);
+    // Not sneaking: Show main menu
+    system.run(() => {
+        showMainMenu(player);
+    });
 })
+
 
 /**
  * Set position when sneaking with Lock Land item
@@ -349,20 +363,34 @@ function showConfirmationForm(player) {
     const pos1 = JSON.parse(pos1Str);
     const pos2 = JSON.parse(pos2Str);
     
-    // Check for overlap with existing lands
-    const overlappingLands = LandManager.checkOverlapWithExisting(pos1, pos2);
+    // Adjust positions: lower Y minus 2, higher Y plus 2
+    const adjustedPos1 = { ...pos1 };
+    const adjustedPos2 = { ...pos2 };
+    
+    if (pos1.y < pos2.y) {
+        adjustedPos1.y -= 2;
+        adjustedPos2.y += 2;
+    } else {
+        adjustedPos1.y += 2;
+        adjustedPos2.y -= 2;
+    }
+    
+    // Check for overlap with existing lands (use adjusted positions)
+    const overlappingLands = LandManager.checkOverlapWithExisting(adjustedPos1, adjustedPos2);
     
     // Calculate size (use integer coordinates)
     const size = {
-        x: Math.abs(Math.round(pos2.x) - Math.round(pos1.x)) + 1,
-        y: Math.abs(Math.round(pos2.y) - Math.round(pos1.y)) + 1,
-        z: Math.abs(Math.round(pos2.z) - Math.round(pos1.z)) + 1
+        x: Math.abs(Math.round(adjustedPos2.x) - Math.round(adjustedPos1.x)) + 1,
+        y: Math.abs(Math.round(adjustedPos2.y) - Math.round(adjustedPos1.y)) + 1,
+        z: Math.abs(Math.round(adjustedPos2.z) - Math.round(adjustedPos1.z)) + 1
     };
     const area = size.x * size.z;
     
     let bodyText = 
-        `§bPosition 1: §f${Math.floor(pos1.x)}, ${Math.floor(pos1.y)}, ${Math.floor(pos1.z)}\n` +
-        `§bPosition 2: §f${Math.floor(pos2.x)}, ${Math.floor(pos2.y)}, ${Math.floor(pos2.z)}\n\n` +
+        `§bOriginal Pos1: §f${Math.floor(pos1.x)}, ${Math.floor(pos1.y)}, ${Math.floor(pos1.z)}\n` +
+        `§bOriginal Pos2: §f${Math.floor(pos2.x)}, ${Math.floor(pos2.y)}, ${Math.floor(pos2.z)}\n\n` +
+        `§bAdjusted Pos1: §a${Math.floor(adjustedPos1.x)}, ${Math.floor(adjustedPos1.y)}, ${Math.floor(adjustedPos1.z)}\n` +
+        `§bAdjusted Pos2: §a${Math.floor(adjustedPos2.x)}, ${Math.floor(adjustedPos2.y)}, ${Math.floor(adjustedPos2.z)}\n\n` +
         `§bSize: §f${size.x}×${size.y}×${size.z}\n` +
         `§bArea: §f${area}m²\n`;
     
@@ -399,7 +427,7 @@ function showConfirmationForm(player) {
                 return;
             }
             
-            // Confirm - save the land
+            // Confirm - save the land with adjusted positions
             // Ask for a name using modal
             const defaultName = `${player.name}'s Land`;
             const nameForm = new ModalFormData()
@@ -415,7 +443,7 @@ function showConfirmationForm(player) {
                 const landName = nResult.formValues[0] || defaultName;
                 try {
                     const dimId = player.dimension && player.dimension.id ? player.dimension.id : null;
-                    const savedLand = LandManager.saveLand(player.name, pos1, pos2, [], landName, dimId);
+                    const savedLand = LandManager.saveLand(player.name, adjustedPos1, adjustedPos2, [], landName, dimId);
                     if (!savedLand) {
                         player.sendMessage(`§c[Lock Land] Cannot save land - you've reached the maximum claims limit!`);
                         resetLandSelection(player);
