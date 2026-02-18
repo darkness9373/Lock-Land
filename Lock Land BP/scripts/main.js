@@ -796,62 +796,105 @@ system.runInterval(() => {
         // If player is in a land they don't own
         if (land && !LandManager.hasPermission(player.name, land)) {
             // Apply weakness effect for 1 second (reapplied by the interval)
-            player.addEffect('weakness', 1, { amplifier: 254, showParticles: false });
+            player.addEffect('weakness', 20, { amplifier: 254, showParticles: false });
         }
     });
 }, 10); // Check every 10 ticks (0.5 seconds)
 
-// Explosion protection - cancel creeper, TNT, crystal, and fireball explosions that damage protected lands
-world.afterEvents.entityDie.subscribe(data => {
-    const entity = data.deadEntity;
-    const location = entity.location;
+// Explosion protection - prevent damage to protected lands while allowing explosion effect
+world.beforeEvents.explosion.subscribe(data => {
+    // Get explosion location from source entity
+    if (!data.source || !data.source.location) return;
     
-    let explosionRadius = 0;
+    const location = data.source.location;
+    let radius = 0;
     
-    // Map entity types to explosion radius
-    if (entity.typeId === 'minecraft:creeper') {
-        explosionRadius = 6;
-    } else if (entity.typeId === 'minecraft:tnt' || entity.typeId === 'minecraft:tnt_minecart') {
-        explosionRadius = 5;
-    } else if (entity.typeId === 'minecraft:end_crystal') {
-        explosionRadius = 6;
+    // Estimate explosion radius based on source entity type
+    const sourceType = data.source.typeId;
+    if (sourceType === 'minecraft:creeper') {
+        radius = 6;
+    } else if (sourceType === 'minecraft:tnt' || sourceType === 'minecraft:tnt_minecart') {
+        radius = 5;
+    } else if (sourceType === 'minecraft:end_crystal') {
+        radius = 6;
+    } else if (sourceType === 'minecraft:fireball') {
+        radius = 5;
+    } else if (sourceType === 'minecraft:small_fireball') {
+        radius = 3;
     } else {
-        return; // Not an explosion entity
+        return; // Not a recognized explosion source
     }
     
     // Check if explosion would damage protected land
-    const affectedLand = Protection.checkExplosionDamage(location.x, location.y, location.z, explosionRadius);
+    const affectedLand = Protection.checkExplosionDamage(location.x, location.y, location.z, radius);
     
     if (affectedLand) {
-        world.sendMessage(`§c[Lock Land] Explosion prevented in protected land: §f${affectedLand.name}`);
+        // Get all impacted blocks
+        const impactedBlocks = data.getImpactedBlocks();
+        
+        // Filter out blocks that are in protected lands
+        const filteredBlocks = impactedBlocks.filter(block => {
+            const land = LandManager.checkPointInLand(block.x, block.y, block.z);
+            return !land; // Keep blocks NOT in protected lands
+        });
+        
+        // Update impacted blocks to only affect non-protected areas
+        data.setImpactedBlocks(filteredBlocks);
+        
+        world.sendMessage(`§c[Lock Land] Explosion damage blocked in protected land: §f${affectedLand.name}`);
     }
 });
 
-// Projectile protection - cancel fireballs and other projectiles that land in protected areas
-world.afterEvents.projectileHit.subscribe(data => {
-    const projectile = data.projectile;
-    let explosionRadius = 0;
+// Fireball protection - monitor and kill fireballs that would damage protected lands
+system.runInterval(() => {
+    const dimensions = ['overworld', 'nether', 'the_end'];
     
-    // Map projectile types to explosion radius
-    if (projectile.typeId === 'minecraft:fireball') {
-        explosionRadius = 5;
-    } else if (projectile.typeId === 'minecraft:small_fireball') {
-        explosionRadius = 3;
-    } else {
-        return;
+    for (const dimName of dimensions) {
+        try {
+            const dimension = world.getDimension(dimName);
+            
+            // Check Fireball entities
+            for (const entity of dimension.getEntities({ type: 'minecraft:fireball' })) {
+                try {
+                    const location = entity.location;
+                    
+                    // Check if fireball is in protected land or explosion would reach
+                    const landInside = LandManager.checkPointInLand(
+                        Math.floor(location.x),
+                        Math.floor(location.y),
+                        Math.floor(location.z)
+                    );
+                    const landReach = Protection.checkExplosionDamage(location.x, location.y, location.z, 5);
+                    
+                    if (landInside || landReach) {
+                        entity.kill();
+                        world.sendMessage(`§c[Lock Land] Fireball cancelled in protected land`);
+                    }
+                } catch (e) {}
+            }
+            
+            // Check Small Fireball entities
+            for (const entity of dimension.getEntities({ type: 'minecraft:small_fireball' })) {
+                try {
+                    const location = entity.location;
+                    
+                    // Check if small fireball is in protected land or explosion would reach
+                    const landInside = LandManager.checkPointInLand(
+                        Math.floor(location.x),
+                        Math.floor(location.y),
+                        Math.floor(location.z)
+                    );
+                    const landReach = Protection.checkExplosionDamage(location.x, location.y, location.z, 3);
+                    
+                    if (landInside || landReach) {
+                        entity.kill();
+                        world.sendMessage(`§c[Lock Land] Small fireball cancelled in protected land`);
+                    }
+                } catch (e) {}
+            }
+        } catch (e) {}
     }
-    
-    const location = projectile.location;
-    
-    // Check if explosion would damage protected land
-    const affectedLand = Protection.checkExplosionDamage(location.x, location.y, location.z, explosionRadius);
-    
-    if (affectedLand) {
-        // Kill the projectile to prevent explosion
-        projectile.kill();
-        world.sendMessage(`§c[Lock Land] Fireball cancelled in protected land: §f${affectedLand.name}`);
-    }
-});
+}, 2); // Check every tick
 
 // Monitor active TNT and Creeper to prevent primed explosions in protected lands
 system.runInterval(() => {
