@@ -75,35 +75,8 @@ function setPosition(player) {
  * @param {Player} player 
  */
 function startParticleVisualization(player) {
+    // Add tag that global particle loop will use to display visualization
     Tag.add(player, 'lockland_show_particles');
-    
-    // Particle update loop
-    system.runInterval(() => {
-        if (!player.hasTag('lockland_show_particles')) {
-            return;
-        }
-        
-        try {
-            const pos1Str = player.getDynamicProperty('locklandPos1');
-            if (!pos1Str) return;
-            
-            const pos1 = JSON.parse(pos1Str);
-            const playerPos = player.location;
-            
-            // Get the cuboid corners
-            const minX = Math.min(pos1.x, playerPos.x);
-            const maxX = Math.max(pos1.x, playerPos.x);
-            const minY = Math.min(pos1.y, playerPos.y);
-            const maxY = Math.max(pos1.y, playerPos.y);
-            const minZ = Math.min(pos1.z, playerPos.z);
-            const maxZ = Math.max(pos1.z, playerPos.z);
-            
-            // Draw particles at edges/corners
-            drawCuboidParticles(player.dimension, minX, minY, minZ, maxX, maxY, maxZ);
-        } catch (error) {
-            // Silently fail
-        }
-    }, 2); // Update every tick
 }
 
 /**
@@ -164,6 +137,35 @@ function drawLineParticles(dimension, p1, p2) {
     }
 }
 
+// Global particle loop: update visualizations for players who set pos1
+system.runInterval(() => {
+    world.getPlayers().forEach(player => {
+        if (!player.hasTag('lockland_show_particles')) return;
+
+        const pos1Str = player.getDynamicProperty('locklandPos1');
+        if (!pos1Str) {
+            Tag.remove(player, 'lockland_show_particles');
+            return;
+        }
+
+        try {
+            const pos1 = JSON.parse(pos1Str);
+            const playerPos = player.location;
+
+            const minX = Math.min(pos1.x, playerPos.x);
+            const maxX = Math.max(pos1.x, playerPos.x);
+            const minY = Math.min(pos1.y, playerPos.y);
+            const maxY = Math.max(pos1.y, playerPos.y);
+            const minZ = Math.min(pos1.z, playerPos.z);
+            const maxZ = Math.max(pos1.z, playerPos.z);
+
+            drawCuboidParticles(player.dimension, minX, minY, minZ, maxX, maxY, maxZ);
+        } catch (e) {
+            // ignore
+        }
+    });
+}, 1);
+
 /**
  * Show confirmation form to create the land claim
  * @param {Player} player 
@@ -184,11 +186,11 @@ function showConfirmationForm(player) {
     // Check for overlap with existing lands
     const overlappingLands = LandManager.checkOverlapWithExisting(pos1, pos2);
     
-    // Calculate size
+    // Calculate size (use integer coordinates)
     const size = {
-        x: Math.abs(pos2.x - pos1.x) + 1,
-        y: Math.abs(pos2.y - pos1.y) + 1,
-        z: Math.abs(pos2.z - pos1.z) + 1
+        x: Math.abs(Math.round(pos2.x) - Math.round(pos1.x)) + 1,
+        y: Math.abs(Math.round(pos2.y) - Math.round(pos1.y)) + 1,
+        z: Math.abs(Math.round(pos2.z) - Math.round(pos1.z)) + 1
     };
     const area = size.x * size.z;
     
@@ -277,9 +279,9 @@ function showLandMenu(player) {
         const loc1 = land.location1;
         const loc2 = land.location2;
         const size = {
-            x: Math.abs(loc2.x - loc1.x) + 1,
-            y: Math.abs(loc2.y - loc1.y) + 1,
-            z: Math.abs(loc2.z - loc1.z) + 1
+            x: Math.abs(Math.round(loc2.x) - Math.round(loc1.x)) + 1,
+            y: Math.abs(Math.round(loc2.y) - Math.round(loc1.y)) + 1,
+            z: Math.abs(Math.round(loc2.z) - Math.round(loc1.z)) + 1
         };
         const area = size.x * size.z;
         
@@ -308,9 +310,9 @@ function showLandDetailForm(player, land) {
     const loc1 = land.location1;
     const loc2 = land.location2;
     const size = {
-        x: Math.abs(loc2.x - loc1.x) + 1,
-        y: Math.abs(loc2.y - loc1.y) + 1,
-        z: Math.abs(loc2.z - loc1.z) + 1
+        x: Math.abs(Math.round(loc2.x) - Math.round(loc1.x)) + 1,
+        y: Math.abs(Math.round(loc2.y) - Math.round(loc1.y)) + 1,
+        z: Math.abs(Math.round(loc2.z) - Math.round(loc1.z)) + 1
     };
     const area = size.x * size.z;
     
@@ -526,7 +528,7 @@ world.beforeEvents.playerBreakBlock.subscribe(data => {
     const player = data.player;
     const block = data.block;
     
-    const land = Protection.checkRestriction(player, block.location.x, block.location.y, block.location.z);
+    const land = Protection.checkRestriction(player, Math.floor(block.location.x), Math.floor(block.location.y), Math.floor(block.location.z));
     
     if (land) {
         Protection.notifyRestricted(player, land);
@@ -539,7 +541,7 @@ world.afterEvents.playerPlaceBlock.subscribe(data => {
     const player = data.player;
     const block = data.block;
     
-    const land = Protection.checkRestriction(player, block.location.x, block.location.y, block.location.z);
+    const land = Protection.checkRestriction(player, Math.floor(block.location.x), Math.floor(block.location.y), Math.floor(block.location.z));
     
     if (land) {
         Protection.notifyRestricted(player, land);
@@ -553,7 +555,7 @@ world.beforeEvents.playerInteractWithBlock.subscribe(data => {
     const player = data.player;
     const block = data.block;
     
-    const land = Protection.checkRestriction(player, block.location.x, block.location.y, block.location.z);
+    const land = Protection.checkRestriction(player, Math.floor(block.location.x), Math.floor(block.location.y), Math.floor(block.location.z));
     
     if (land) {
         Protection.notifyRestricted(player, land);
