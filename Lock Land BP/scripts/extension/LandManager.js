@@ -262,6 +262,25 @@ export class LandManager {
     }
 
     /**
+     * Delete all lands in the world efficiently (without reindexing)
+     * @returns {number} - Number of lands deleted
+     */
+    deleteAllLands() {
+        let count = 0;
+        const keysToRemove = [];
+        for (const key of world.getDynamicPropertyIds()) {
+            if (key.startsWith('Land_')) {
+                keysToRemove.push(key);
+            }
+        }
+        for (const key of keysToRemove) {
+            world.setDynamicProperty(key, undefined);
+            count++;
+        }
+        return count;
+    }
+
+    /**
      * Add a player to the permission list
      * @param {string} landId 
      * @param {string} playerName 

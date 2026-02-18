@@ -141,15 +141,9 @@ function showAdminMenu(player) {
             confirm.show(player).then(cres => {
                 if (cres.canceled) return;
                 if (cres.selection === 0) {
-                    // Robustly delete all lands by refreshing list until empty
-                    let all = LandManager.getAllLands();
-                    while (all.length > 0) {
-                        for (const l of all) {
-                            LandManager.deleteLand(l.id);
-                        }
-                        all = LandManager.getAllLands();
-                    }
-                    player.sendMessage('§a[Lock Land] All lands deleted.');
+                    // Efficiently delete all lands at once
+                    const count = LandManager.deleteAllLands();
+                    player.sendMessage(`§a[Lock Land] ${count} lands deleted.`);
                 }
             });
         }
