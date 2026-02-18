@@ -42,13 +42,13 @@ export class LandManager {
         
         const landId = `Land_${ownerName}_${count}`;
         
-        // Normalize coordinates
-        const minX = Math.min(location1.x, location2.x);
-        const maxX = Math.max(location1.x, location2.x);
-        const minY = Math.min(location1.y, location2.y);
-        const maxY = Math.max(location1.y, location2.y);
-        const minZ = Math.min(location1.z, location2.z);
-        const maxZ = Math.max(location1.z, location2.z);
+        // Normalize and floor coordinates to ensure integer storage
+        const minX = Math.floor(Math.min(location1.x, location2.x));
+        const maxX = Math.floor(Math.max(location1.x, location2.x));
+        const minY = Math.floor(Math.min(location1.y, location2.y));
+        const maxY = Math.floor(Math.max(location1.y, location2.y));
+        const minZ = Math.floor(Math.min(location1.z, location2.z));
+        const maxZ = Math.floor(Math.max(location1.z, location2.z));
         
         const landData = {
             id: landId,
@@ -140,6 +140,18 @@ export class LandManager {
      * @returns {array} - Array of overlapping lands
      */
     checkOverlapWithExisting(location1, location2) {
+        // Floor input coordinates for consistency with stored data
+        const floorLoc1 = {
+            x: Math.floor(location1.x),
+            y: Math.floor(location1.y),
+            z: Math.floor(location1.z)
+        };
+        const floorLoc2 = {
+            x: Math.floor(location2.x),
+            y: Math.floor(location2.y),
+            z: Math.floor(location2.z)
+        };
+        
         const overlapping = [];
         
         for (const key of world.getDynamicPropertyIds()) {
@@ -148,7 +160,7 @@ export class LandManager {
                 try {
                     const land = JSON.parse(data);
                     if (land.location1 && land.location2) {
-                        if (this.checkOverlap(location1, location2, land.location1, land.location2)) {
+                        if (this.checkOverlap(floorLoc1, floorLoc2, land.location1, land.location2)) {
                             overlapping.push(land);
                         }
                     }
@@ -189,7 +201,17 @@ export class LandManager {
             const nextKey = `Land_${owner}_${i + 1}`;
             const curKey = `Land_${owner}_${i}`;
             const nextData = world.getDynamicProperty(nextKey);
-            world.setDynamicProperty(curKey, nextData);
+            // Update the id field in the land data to match the new key location
+            if (nextData) {
+                try {
+                    const landObj = JSON.parse(nextData);
+                    landObj.id = curKey;
+                    world.setDynamicProperty(curKey, JSON.stringify(landObj));
+                } catch {
+                    // Fallback: copy as-is if parsing fails
+                    world.setDynamicProperty(curKey, nextData);
+                }
+            }
         }
 
         // Remove last entry and decrement count
@@ -218,6 +240,11 @@ export class LandManager {
      * @returns {object|null} - The land object if point is inside
      */
     checkPointInLand(x, y, z) {
+        // Floor coordinates to match stored integer coordinates
+        const fx = Math.floor(x);
+        const fy = Math.floor(y);
+        const fz = Math.floor(z);
+        
         for (const key of world.getDynamicPropertyIds()) {
             if (key.startsWith('Land_') && !key.endsWith('_count')) {
                 const data = world.getDynamicProperty(key);
@@ -226,9 +253,9 @@ export class LandManager {
                     const loc1 = land.location1;
                     const loc2 = land.location2;
                     
-                    if (x >= loc1.x && x <= loc2.x &&
-                        y >= loc1.y && y <= loc2.y &&
-                        z >= loc1.z && z <= loc2.z) {
+                    if (fx >= loc1.x && fx <= loc2.x &&
+                        fy >= loc1.y && fy <= loc2.y &&
+                        fz >= loc1.z && fz <= loc2.z) {
                         return land;
                     }
                 } catch {

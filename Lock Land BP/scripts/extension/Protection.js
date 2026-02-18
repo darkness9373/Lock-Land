@@ -84,6 +84,43 @@ export class Protection {
     static notifyRestricted(player, land) {
         player.sendMessage(`§c[Lock Land] This area is protected by §f${land.owner}§c.`);
     }
+
+    /**
+     * Check if an explosion at given location with given radius would damage protected land
+     * @param {number} x 
+     * @param {number} y 
+     * @param {number} z 
+     * @param {number} radius - Explosion radius
+     * @returns {object|null} - Land data if explosion would damage land, null otherwise
+     */
+    static checkExplosionDamage(x, y, z, radius) {
+        // Check multiple points in the explosion radius
+        const points = [];
+        
+        // Center
+        points.push({ x, y, z });
+        
+        // Surface points of sphere (6 directions + diagonals)
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dz = -radius; dz <= radius; dz++) {
+                    if (dx * dx + dy * dy + dz * dz <= radius * radius) {
+                        points.push({ x: Math.floor(x + dx), y: Math.floor(y + dy), z: Math.floor(z + dz) });
+                    }
+                }
+            }
+        }
+        
+        // Check if any point is in a protected land
+        for (const pt of points) {
+            const land = LandManager.checkPointInLand(pt.x, pt.y, pt.z);
+            if (land) {
+                return land;
+            }
+        }
+        
+        return null;
+    }
 }
 
 export default Protection;

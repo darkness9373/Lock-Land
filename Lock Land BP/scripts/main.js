@@ -850,3 +850,131 @@ system.runInterval(() => {
         }
     });
 }, 10); // Check every 10 ticks (0.5 seconds)
+
+// Explosion protection - cancel creeper, TNT, crystal, and fireball explosions that damage protected lands
+world.afterEvents.entityDie.subscribe(data => {
+    const entity = data.deadEntity;
+    const location = entity.location;
+    
+    let explosionRadius = 0;
+    
+    // Map entity types to explosion radius
+    if (entity.typeId === 'minecraft:creeper') {
+        explosionRadius = 6;
+    } else if (entity.typeId === 'minecraft:tnt' || entity.typeId === 'minecraft:tnt_minecart') {
+        explosionRadius = 5;
+    } else if (entity.typeId === 'minecraft:end_crystal') {
+        explosionRadius = 6;
+    } else {
+        return; // Not an explosion entity
+    }
+    
+    // Check if explosion would damage protected land
+    const affectedLand = Protection.checkExplosionDamage(location.x, location.y, location.z, explosionRadius);
+    
+    if (affectedLand) {
+        world.sendMessage(`§c[Lock Land] Explosion prevented in protected land: §f${affectedLand.name}`);
+    }
+});
+
+// Projectile protection - cancel fireballs and other projectiles that land in protected areas
+world.afterEvents.projectileHit.subscribe(data => {
+    const projectile = data.projectile;
+    let explosionRadius = 0;
+    
+    // Map projectile types to explosion radius
+    if (projectile.typeId === 'minecraft:fireball') {
+        explosionRadius = 5;
+    } else if (projectile.typeId === 'minecraft:small_fireball') {
+        explosionRadius = 3;
+    } else {
+        return;
+    }
+    
+    const location = projectile.location;
+    
+    // Check if explosion would damage protected land
+    const affectedLand = Protection.checkExplosionDamage(location.x, location.y, location.z, explosionRadius);
+    
+    if (affectedLand) {
+        // Kill the projectile to prevent explosion
+        projectile.kill();
+        world.sendMessage(`§c[Lock Land] Fireball cancelled in protected land: §f${affectedLand.name}`);
+    }
+});
+
+// Monitor active TNT and Creeper to prevent primed explosions in protected lands
+system.runInterval(() => {
+    // Monitor all dimensions
+    const dimensions = ['overworld', 'nether', 'the_end'];
+    
+    for (const dimName of dimensions) {
+        try {
+            const dimension = world.getDimension(dimName);
+            
+            // Check TNT entities (including TNT that may explode and reach protected lands)
+            for (const entity of dimension.getEntities({ type: 'minecraft:tnt' })) {
+                try {
+                    const location = entity.location;
+                    const fx = Math.floor(location.x);
+                    const fy = Math.floor(location.y);
+                    const fz = Math.floor(location.z);
+                    
+                    // Check if TNT is in a protected land
+                    const landInside = LandManager.checkPointInLand(fx, fy, fz);
+                    if (landInside) {
+                        entity.kill();
+                        continue;
+                    }
+                    
+                    // Check if TNT explosion would reach any protected land (radius 5 blocks)
+                    const landReach = Protection.checkExplosionDamage(location.x, location.y, location.z, 5);
+                    if (landReach) {
+                        entity.kill();
+                    }
+                } catch (e) {}
+            }
+            
+            // Check Creeper entities (including those that may explode and reach protected lands)
+            for (const entity of dimension.getEntities({ type: 'minecraft:creeper' })) {
+                try {
+                    const location = entity.location;
+                    const fx = Math.floor(location.x);
+                    const fy = Math.floor(location.y);
+                    const fz = Math.floor(location.z);
+                    
+                    // Check if Creeper is in a protected land
+                    const landInside = LandManager.checkPointInLand(fx, fy, fz);
+                    if (landInside) {
+                        entity.kill();
+                        continue;
+                    }
+                    
+                    // Check if Creeper explosion would reach any protected land (radius 6 blocks)
+                    const landReach = Protection.checkExplosionDamage(location.x, location.y, location.z, 6);
+                    if (landReach) {
+                        entity.kill();
+                    }
+                } catch (e) {}
+            }
+            
+            // Check End Crystal entities
+            for (const entity of dimension.getEntities({ type: 'minecraft:end_crystal' })) {
+                try {
+                    const location = entity.location;
+                    const fx = Math.floor(location.x);
+                    const fy = Math.floor(location.y);
+                    const fz = Math.floor(location.z);
+                    
+                    // Check if End Crystal is in a protected land or explosion would reach
+                    const landInside = LandManager.checkPointInLand(fx, fy, fz);
+                    const landReach = Protection.checkExplosionDamage(location.x, location.y, location.z, 6);
+                    
+                    if (landInside || landReach) {
+                        entity.kill();
+                    }
+                } catch (e) {}
+            }
+        } catch (e) {}
+    }
+}, 2); // Check every tick
