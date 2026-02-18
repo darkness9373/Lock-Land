@@ -240,63 +240,7 @@ function startParticleVisualization(player) {
     Tag.add(player, 'lockland_show_particles');
 }
 
-/**
- * Draw cuboid outline with particles
- * @param {Dimension} dimension 
- * @param {number} minX 
- * @param {number} minY 
- * @param {number} minZ 
- * @param {number} maxX 
- * @param {number} maxY 
- * @param {number} maxZ 
- */
-function drawCuboidParticles(dimension, minX, minY, minZ, maxX, maxY, maxZ) {
-    const corners = [
-        { x: minX, y: minY, z: minZ },
-        { x: maxX, y: minY, z: minZ },
-        { x: minX, y: maxY, z: minZ },
-        { x: maxX, y: maxY, z: minZ },
-        { x: minX, y: minY, z: maxZ },
-        { x: maxX, y: minY, z: maxZ },
-        { x: minX, y: maxY, z: maxZ },
-        { x: maxX, y: maxY, z: maxZ }
-    ];
-    
-    // Draw edges
-    const edges = [
-        [0, 1], [2, 3], [4, 5], [6, 7],  // Parallel to X
-        [0, 2], [1, 3], [4, 6], [5, 7],  // Parallel to Y
-        [0, 4], [1, 5], [2, 6], [3, 7]   // Parallel to Z
-    ];
-    
-    edges.forEach(edge => {
-        const p1 = corners[edge[0]];
-        const p2 = corners[edge[1]];
-        drawLineParticles(dimension, p1, p2);
-    });
-}
 
-/**
- * Draw a line between two points using particles
- * @param {Dimension} dimension 
- * @param {object} p1 - {x, y, z}
- * @param {object} p2 - {x, y, z}
- */
-function drawLineParticles(dimension, p1, p2) {
-    const steps = 16;
-    
-    for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const x = p1.x + (p2.x - p1.x) * t;
-        const y = p1.y + (p2.y - p1.y) * t;
-        const z = p1.z + (p2.z - p1.z) * t;
-        
-        // Spawn particle at this location
-        dimension.spawnParticle('minecraft:redstone_ore_dust_particle', { x, y, z }, {
-            brightness: { block: 15, sky: 15 }
-        });
-    }
-}
 
 /**
  * Find a safe teleport location inside the given land box.
@@ -353,12 +297,14 @@ function findSafeTeleportLocation(dimension, loc1, loc2) {
     return new Vector3(cx, fallbackY, cz);
 }
 
-// Global particle loop: update visualizations for players who set pos1
+// Global particle loop: spawn particles at pos1 and pos2 for players setting land
 system.runInterval(() => {
     world.getPlayers().forEach(player => {
         if (!player.hasTag('lockland_show_particles')) return;
 
         const pos1Str = player.getDynamicProperty('locklandPos1');
+        const pos2Str = player.getDynamicProperty('locklandPos2');
+        
         if (!pos1Str) {
             Tag.remove(player, 'lockland_show_particles');
             return;
@@ -366,16 +312,20 @@ system.runInterval(() => {
 
         try {
             const pos1 = JSON.parse(pos1Str);
-            const playerPos = player.location;
-
-            const minX = Math.min(pos1.x, playerPos.x);
-            const maxX = Math.max(pos1.x, playerPos.x);
-            const minY = Math.min(pos1.y, playerPos.y);
-            const maxY = Math.max(pos1.y, playerPos.y);
-            const minZ = Math.min(pos1.z, playerPos.z);
-            const maxZ = Math.max(pos1.z, playerPos.z);
-
-            drawCuboidParticles(player.dimension, minX, minY, minZ, maxX, maxY, maxZ);
+            // Spawn particle at pos1
+            player.dimension.spawnParticle('minecraft:redstone_ore_dust_particle', 
+                { x: pos1.x + 0.5, y: pos1.y + 0.5, z: pos1.z + 0.5 },
+                { brightness: { block: 15, sky: 15 } }
+            );
+            
+            // If pos2 exists, spawn particle there too
+            if (pos2Str) {
+                const pos2 = JSON.parse(pos2Str);
+                player.dimension.spawnParticle('minecraft:redstone_ore_dust_particle',
+                    { x: pos2.x + 0.5, y: pos2.y + 0.5, z: pos2.z + 0.5 },
+                    { brightness: { block: 15, sky: 15 } }
+                );
+            }
         } catch (e) {
             // ignore
         }
